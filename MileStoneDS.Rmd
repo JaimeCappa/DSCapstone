@@ -1,0 +1,234 @@
+---
+title: "Milestone Project"
+author: "Jaime Cappa"
+date: "March 7, 2016"
+output: html_document
+---
+
+#JHU Data Science Capstone Milestone Report
+
+This report is produced in partial fulfillment of the requirements for the Capstone Project offered by Johns Hopkins Bloomberg School of Public Health and Coursera.
+
+This report describes the exploratory data analysis of the Capstone Dataset.
+
+```{r, echo = TRUE}
+paste("Check file sizes in MB")
+```
+
+```{r, echo = TRUE}
+file.info("en_US.twitter.txt")$size / (1024*1024)
+```
+
+```{r, echo = TRUE}
+file.info("en_US.news.txt")$size / (1024*1024)
+```
+
+```{r, echo = TRUE}
+file.info("en_US.blogs.txt")$size / (1024*1024)
+```
+
+###View Line Counts:
+
+```{r, echo = TRUE}
+install.packages('R.utils', repos='http://cran.us.r-project.org')
+library(R.utils)
+countLines("en_US.twitter.txt")
+```
+
+```{r, echo = TRUE}
+countLines("en_US.news.txt")
+```
+
+```{r, echo = TRUE}
+countLines("en_US.blogs.txt")
+```
+
+###View Word Counts:
+
+```{r, echo = TRUE}
+system2("wc", args = "-L en_US.twitter.txt", stdout=TRUE)
+```
+
+```{r, echo = TRUE}
+system2("wc", args = "-L en_US.news.txt", stdout=TRUE)
+```
+
+```{r, echo = TRUE}
+system2("wc", args = "-L en_US.blogs.txt", stdout=TRUE)
+```
+
+#Perform Sampling
+
+Given the large amount of text and limited computational resources, sampling is performed. 10000 lines per file is randomly sampled and saved to disk.
+
+```{r, echo = TRUE}
+twitter <- readLines('en_US.twitter.txt')
+news <- readLines('en_US.news.txt')
+blogs <- readLines('en_US.blogs.txt')
+set.seed(39)
+sampleTwitter <- twitter[sample(1:length(twitter),10000)]
+sampleNews <- news[sample(1:length(news),10000)]
+sampleBlogs <- blogs[sample(1:length(blogs),10000)]
+sampleData <- c(sampleTwitter,sampleNews,sampleBlogs)
+writeLines(sampleData, ".sampleData.txt")
+
+# remove temporary variables
+rm(twitter,news,blogs,sampleTwitter,sampleNews,sampleBlogs,sampleData)
+```
+
+#Create and Clean Corpus
+
+Using the tm package, the sampled data is used to create a corpus. Subsequently, the the following transformations are performed:
+
+-convert to lowercase
+-characters /, @ |
+-common punctuation
+-numbers
+-English stop words
+-strip whitespace
+-stemming (Porter’s stemming)
+
+```{r, echo = TRUE}
+install.packages('tm', repos='http://cran.us.r-project.org')
+library(tm)
+cname <- file.path(".")
+docs <- Corpus(DirSource(cname))
+
+# convert to lowercase
+docs <- tm_map(docs, content_transformer(tolower))
+
+# remove more transforms
+toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+docs <- tm_map(docs, toSpace, "/|@|\\|")
+
+# remove punctuation
+docs <- tm_map(docs, removePunctuation)
+
+# remove numbers
+docs <- tm_map(docs, removeNumbers)
+
+# strip whitespace
+docs <- tm_map(docs, stripWhitespace)
+
+# remove english stop words
+docs <- tm_map(docs, removeWords, stopwords("english"))
+
+# initiate stemming
+install.packages('SnowballC', repos='http://cran.us.r-project.org')
+library(SnowballC)
+docs <- tm_map(docs, stemDocument)
+```
+
+#N-gram Tokenization
+
+N-grams models are created to explore word frequencies. Using the RWeka package, unigrams, bigrams and trigrams are created.
+
+```{r, echo = TRUE}
+install.packages('RWeka', repos='http://cran.us.r-project.org')
+library(RWeka)
+Tokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 1, max = 1))
+unidtm <- DocumentTermMatrix(docs, control = list(tokenize = Tokenizer))
+
+BigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+bidtm <- DocumentTermMatrix(docs, control = list(tokenize = BigramTokenizer))
+
+TrigramTokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 3, max = 3))
+tridtm <- DocumentTermMatrix(docs, control = list(tokenize = TrigramTokenizer))
+```
+
+#Exploratory Data Analysis
+
+##Top 10 Frequencies
+
+Below, you can see the top 10 unigrams with the highest frequencies.
+
+```{r, echo = TRUE}
+tm_unifreq <- sort(colSums(as.matrix(unidtm)), decreasing=TRUE)
+tm_uniwordfreq <- data.frame(word=names(tm_unifreq), freq=tm_unifreq)
+paste("Unigrams - Top 5 highest frequencies")
+```
+
+```{r, echo = TRUE}
+head(tm_uniwordfreq,5)
+```
+
+```{r, echo = TRUE}
+tm_bifreq <- sort(colSums(as.matrix(bidtm)), decreasing=TRUE)
+tm_biwordfreq <- data.frame(word=names(tm_bifreq), freq=tm_bifreq)
+paste("Bigrams - Top 5 highest frequencies")
+```
+
+```{r, echo = TRUE}
+head(tm_biwordfreq,5)
+```
+
+```{r, echo = TRUE}
+tm_trifreq <- sort(colSums(as.matrix(tridtm)), decreasing=TRUE)
+tm_triwordfreq <- data.frame(word=names(tm_trifreq), freq=tm_trifreq)
+paste("Trigrams - Top 5 highest frequencies")
+```
+
+```{r, echo = TRUE}
+head(tm_triwordfreq,5)
+```
+
+#Explore Frequencies
+
+In the diagrams below, you can explore the Ngrams by frequencies:
+
+```{r, echo = TRUE}
+install.packages('ggplot2', repos='http://cran.us.r-project.org')
+install.packages('dplyr', repos='http://cran.us.r-project.org')
+library(ggplot2)
+library(dplyr)
+tm_uniwordfreq %>% 
+    filter(freq > 1000) %>%
+    ggplot(aes(word,freq)) +
+    geom_bar(stat="identity") +
+    ggtitle("Unigrams with frequencies > 1000") +
+    xlab("Unigrams") + ylab("Frequency") +
+    theme(axis.text.x=element_text(angle=45, hjust=1))
+```
+
+```{r, echo = TRUE}
+tm_biwordfreq %>% 
+    filter(freq > 100) %>%
+    ggplot(aes(word,freq)) +
+    geom_bar(stat="identity") +
+    ggtitle("Bigrams with frequencies > 100") +
+    xlab("Bigrams") + ylab("Frequency") +
+    theme(axis.text.x=element_text(angle=45, hjust=1))
+```
+
+```{r, echo = TRUE}
+tm_triwordfreq %>% 
+    filter(freq > 10) %>%
+    ggplot(aes(word,freq)) +
+    geom_bar(stat="identity") +
+    ggtitle("Trigrams with frequencies > 10") +
+    xlab("Trigrams") + ylab("Frequency") +
+    theme(axis.text.x=element_text(angle=45, hjust=1))
+```
+
+Below, we can see wordclouds of the top 50 unigrams, bigrams and trigrams.
+
+##Wordcloud - Top 50 Unigrams
+
+```{r, echo = TRUE}
+install.packages('wordcloud', repos='http://cran.us.r-project.org')
+library(wordcloud)
+set.seed(39)
+wordcloud(names(tm_unifreq), tm_unifreq, max.words=50, scale=c(5, .1), colors=brewer.pal(6, "Dark2"))
+```
+
+##Wordcloud - Top 50 Bigrams
+
+```{r, echo = TRUE}
+wordcloud(names(tm_bifreq), tm_bifreq, max.words=50, scale=c(5, .1), colors=brewer.pal(6, "Dark2"))
+```
+
+##Wordcloud - Top 50 Trigrams
+
+```{r, echo = TRUE}
+wordcloud(names(tm_trifreq), tm_trifreq, max.words=50, scale=c(5, .1), colors=brewer.pal(6, "Dark2"))
+```
